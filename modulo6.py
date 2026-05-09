@@ -1,6 +1,11 @@
 import os
 import sys
+import json
+import threading
+import urllib.parse
 import tkinter as tk
+from http.server import BaseHTTPRequestHandler
+import socketserver
 from tkinter import messagebox, simpledialog, ttk
 
 # Importación de tus módulos
@@ -191,6 +196,169 @@ class GeminiMeshGUI:
                 self.txt_display.config(state="disabled")
 
 # ==========================================
+# API SERVER SUPPORT
+# ==========================================
+
+def _extraer_contexto(bot):
+    mensajes = []
+    actual = bot.contexto.frente
+    while actual:
+        mensajes.append(actual.mensaje)
+        actual = actual.siguiente
+    return mensajes
+
+
+def _extraer_historial(bot):
+    historial = []
+    actual = bot.historial_estados.cima
+    while actual:
+        historial.append({
+            "system_instruction": actual.estado.system_instruction,
+            "temperatura": actual.estado.temperatura
+        })
+        actual = actual.siguiente
+    return historial
+
+
+def _bot_a_dict(bot):
+    return {
+        "id": bot.id,
+        "nombre": bot.nombre,
+        "modelo": bot.modelo,
+        "api_key": bot.api_key,
+        "system_instruction": bot.system_instruction,
+        "contexto": _extraer_contexto(bot),
+        "historial": _extraer_historial(bot)
+    }
+
+
+class GeminiMeshAPIHandler(BaseHTTPRequestHandler):
+    def _set_headers(self, status=200):
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.end_headers()
+
+    def _send_json(self, data, status=200):
+        self._set_headers(status)
+        self.wfile.write(json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8"))
+
+    def _leer_json(self):
+        longitud = int(self.headers.get("Content-Length", 0))
+        if longitud == 0:
+            return {}
+        raw = self.rfile.read(longitud).decode("utf-8")
+        return json.loads(raw)
+
+    def do_GET(self):
+        ruta = urllib.parse.urlparse(self.path).path
+        if ruta == "/api/bots":
+            bots = []
+            actual = self.server.red.cabeza
+            while actual:
+                bots.append({
+                    "id": actual.id,
+                    "nombre": actual.nombre,
+                    "modelo": actual.modelo,
+                    "api_key": actual.api_key
+                })
+                actual = actual.siguiente
+            self._send_json({"bots": bots})
+            return
+
+        if ruta.startswith("/api/bots/"):
+            bot_id = ruta.split("/", 3)[-1]
+            bot = self.server.red.buscar_bot(bot_id)
+            if bot:
+                self._send_json({"bot": _bot_a_dict(bot)})
+            else:
+                self._send_json({"error": "Bot no encontrado"}, status=404)
+            return
+
+        if ruta == "/api/status":
+            total = 0
+            actual = self.server.red.cabeza
+            while actual:
+                total += 1
+                actual = actual.siguiente
+            self._send_json({"bots_total": total, "host": self.server.server_address[0], "port": self.server.server_address[1]})
+            return
+
+        self._send_json({"error": "Ruta no encontrada"}, status=404)
+
+    def do_POST(self):
+        ruta = urllib.parse.urlparse(self.path).path
+        try:
+            datos = self._leer_json()
+        except Exception:
+            self._send_json({"error": "JSON inválido"}, status=400)
+            return
+
+        if ruta == "/api/chat":
+            bot_id = datos.get("id")
+            mensaje = datos.get("mensaje")
+            if not bot_id or not mensaje:
+                self._send_json({"error": "Faltan campos 'id' o 'mensaje'"}, status=400)
+                return
+            bot = self.server.red.buscar_bot(bot_id)
+            if not bot:
+                self._send_json({"error": "Bot no encontrado"}, status=404)
+                return
+            bot.contexto.encolar(mensaje)
+            self._send_json({"status": "Mensaje encolado", "bot": _bot_a_dict(bot)})
+            return
+
+        if ruta == "/api/undo":
+            bot_id = datos.get("id")
+            if not bot_id:
+                self._send_json({"error": "Falta campo 'id'"}, status=400)
+                return
+            bot = self.server.red.buscar_bot(bot_id)
+            if not bot:
+                self._send_json({"error": "Bot no encontrado"}, status=404)
+                return
+            p = bot.historial_estados.pop()
+            if p:
+                bot.system_instruction = p.system_instruction
+                self._send_json({"status": "Estado restaurado", "bot": _bot_a_dict(bot)})
+            else:
+                self._send_json({"error": "No hay estados previos"}, status=400)
+            return
+
+        self._send_json({"error": "Ruta no encontrada"}, status=404)
+
+
+def iniciar_api(red, auditoria, persistencia, host="127.0.0.1", port=8000):
+    class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+        allow_reuse_address = True
+
+    with ThreadedTCPServer((host, port), GeminiMeshAPIHandler) as httpd:
+        httpd.red = red
+        httpd.auditoria = auditoria
+        httpd.persistencia = persistencia
+
+        print(f"\n[API] Servidor iniciado en http://{host}:{port}")
+        print("[API] Rutas disponibles:")
+        print("  GET  /api/bots")
+        print("  GET  /api/bots/<id>")
+        print("  GET  /api/status")
+        print("  POST /api/chat    {\"id\":..., \"mensaje\":...}")
+        print("  POST /api/undo    {\"id\":...}")
+        print("[API] Presione ENTER para detener el servidor.")
+
+        servidor_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        servidor_thread.start()
+
+        try:
+            input()
+        except KeyboardInterrupt:
+            pass
+
+        httpd.shutdown()
+        servidor_thread.join()
+        print("[API] Servidor detenido.")
+
+
+# ==========================================
 # MAIN DRIVER
 # ==========================================
 if __name__ == "__main__":
@@ -206,7 +374,8 @@ if __name__ == "__main__":
         print("="*35)
         print(" 1. Iniciar Interfaz de Consola (A)")
         print(" 2. Iniciar Interfaz Gráfica (B)")
-        print(" 3. Salir y Guardar Todo")
+        print(" 3. Iniciar Servidor API")
+        print(" 4. Salir y Guardar Todo")
         print("="*35)
         
         op = input("Seleccione una opción: ")
@@ -218,6 +387,8 @@ if __name__ == "__main__":
             gui = GeminiMeshGUI(root, mi_red, mis_logs, mi_persistencia)
             root.mainloop()
         elif op == "3":
+            iniciar_api(mi_red, mis_logs, mi_persistencia)
+        elif op == "4":
             mi_persistencia.guardar_datos(mi_red)
             print("Datos guardados. Saliendo...")
             break
