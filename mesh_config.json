@@ -1,0 +1,31 @@
+[
+    {
+        "id": "leo",
+        "nombre": "leo",
+        "modelo": "gemini",
+        "api_key": "si",
+        "system_instruction": "si",
+        "contexto": [
+            "hola",
+            "a",
+            "oioiioioi",
+            "pijamitaaaa",
+            "holaaa"
+        ],
+        "historial": []
+    },
+    {
+        "id": "leo",
+        "nombre": "leo",
+        "modelo": "gemini",
+        "api_key": "si",
+        "system_instruction": "si",
+        "contexto": [
+            "hola",
+            "a",
+            "oioiioioi",
+            "pijamitaaaa"
+        ],
+        "historial": []
+    }
+]
