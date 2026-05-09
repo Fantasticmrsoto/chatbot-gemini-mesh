@@ -17,9 +17,9 @@ class ColaMensajes:
         else:
             self.final_cola.siguiente = nuevo_nodo
             self.final_cola = nuevo_nodo
-        
+
         self.tamano_actual += 1
-        
+
         # Desencolar automático si supera la ventana de contexto [cite: 15]
         if self.tamano_actual > self.limite:
             self.desencolar()
@@ -30,4 +30,7 @@ class ColaMensajes:
         mensaje_eliminado = self.frente.mensaje
         self.frente = self.frente.siguiente
         self.tamano_actual -= 1
+        if self.frente is None:
+            self.final_cola = None
         return mensaje_eliminado
+    

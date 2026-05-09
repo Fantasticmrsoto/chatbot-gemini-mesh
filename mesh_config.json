@@ -10,7 +10,8 @@
             "a",
             "oioiioioi",
             "pijamitaaaa",
-            "holaaa"
+            "holaaa",
+            "pijamitaaaaa"
         ],
         "historial": []
     },
@@ -25,6 +26,20 @@
             "a",
             "oioiioioi",
             "pijamitaaaa"
+        ],
+        "historial": []
+    },
+    {
+        "id": "1234",
+        "nombre": "pipi",
+        "modelo": "parao",
+        "api_key": "67",
+        "system_instruction": "lobotomiced",
+        "contexto": [
+            "Usuario: a",
+            "Usuario: hola",
+            "Usuario: a",
+            "hola"
         ],
         "historial": []
     }
